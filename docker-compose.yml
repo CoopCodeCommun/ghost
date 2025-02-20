@@ -1,44 +1,41 @@
 services:
-    ghost:
-        image: ghost:latest
-        container_name: ghost-rtlx
-        hostname: ghost-RTLx
-        volumes:
-        - ./config.production.json:/var/lib/ghost/config.production.json:z
-        - ./ghost:/var/lib/ghost/content
-        environment:
-            NODE_ENV: production
-        restart: unless-stopped
-        networks:
-        - ghost
-        - frontend
-        labels:
-        - traefik.enable=true
-        - traefik.docker.network=frontend
-        - traefik.http.routers.ghost-rtlx.tls.certresolver=myresolver
-        - traefik.http.routers.ghost-rtlx.rule=Host(`$DOMAIN`) 
-        depends_on:
-        - mysql
+  ghost:
+    image: ghost:latest
+    container_name: ghost-rtlx
+    hostname: ghost-RTLx
+    volumes:
+      - ./config.production.json:/var/lib/ghost/config.production.json:z
+      - ./ghost:/var/lib/ghost/content
+    # environment:
+      # NODE_ENV: production
+    restart: unless-stopped
+    networks:
+      - frontend
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=frontend
+      - traefik.http.routers.ghost-rtlx.tls.certresolver=myresolver
+      - traefik.http.routers.ghost-rtlx.rule=Host(`$DOMAIN`) 
+      - traefik.http.services.ghost.loadbalancer.server.port=2368
+    depends_on:
+      - ghost-mysql
 
-    mysql:
-        image: mysql:8
-        container_name: ghost-mysql
-        hostname: ghost-mysql
-        volumes:
-            - ./db:/var/lib/mysql
-        environment:
-            MYSQL_ROOT_PASSWORD: $MYSQL_ROOT_PASSWORD
-            MYSQL_USER: user
-            MYSQL_PASSWORD: $MYSQL_PASSWORD
-            MYSQL_DATABASE: ghost
-        restart: unless-stopped
-        networks:
-        - ghost
-
+  mysql:
+    image: mysql:8
+    container_name: ghost-mysql
+    hostname: ghost-mysql
+    volumes:
+      - ./db:/var/lib/mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: $MYSQL_ROOT_PASSWORD
+      MYSQL_USER: user
+      MYSQL_PASSWORD: $MYSQL_PASSWORD
+      MYSQL_DATABASE: ghost
+    restart: unless-stopped
+    networks:
+      - frontend
 
 
 networks:
-    ghost:
-        internal: true
-    frontend:
-        external: true
+  frontend:
+    external: true
