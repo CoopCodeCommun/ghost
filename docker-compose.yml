@@ -20,7 +20,7 @@ services:
     depends_on:
       - ghost-mysql
 
-  mysql:
+  ghost-mysql:
     image: mysql:8
     container_name: ghost-mysql
     hostname: ghost-mysql
