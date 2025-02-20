@@ -14,7 +14,7 @@ services:
       url: https://ghost.tibillet.coop # this url value is just an example, and is likely wrong for your environment!
       #NODE_ENV: development # contrary to the default mentioned in the linked documentation, this image defaults to NODE_ENV=production (so development mode needs to be explicitly specified if desired)
     volumes:
-      - ghost:/var/lib/ghost/content
+      - ./content:/var/lib/ghost/content
     labels:
       - traefik.enable=true
       - traefik.docker.network=frontend
