@@ -1,7 +1,4 @@
-version: '3.1'
-
 services:
-
   ghost:
     image: ghost:5-alpine
     restart: always
@@ -37,8 +34,6 @@ services:
     networks:
       - frontend
       - backghost
-
-
 
       
 networks:
