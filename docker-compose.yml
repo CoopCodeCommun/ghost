@@ -15,7 +15,7 @@ services:
       - traefik.enable=true
       - traefik.docker.network=frontend
       - traefik.http.routers.ghost-rtlx.tls.certresolver=myresolver
-      - traefik.http.routers.ghost-rtlx.rule=Host(`$DOMAIN`) 
+      - traefik.http.routers.ghost-rtlx.rule=Host(`$DOMAIN`)
       - traefik.http.services.ghost.loadbalancer.server.port=2368
     depends_on:
       - ghost-mysql
@@ -24,6 +24,8 @@ services:
     image: mysql:8
     container_name: ghost-mysql
     hostname: ghost-mysql
+    expose:
+      - 3306
     volumes:
       - ./db:/var/lib/mysql
     environment:
