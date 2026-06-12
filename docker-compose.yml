@@ -18,7 +18,8 @@ services:
       - traefik.http.routers.ghost-rtlx.rule=Host(`$DOMAIN`) 
       - traefik.http.services.ghost.loadbalancer.server.port=2368
     depends_on:
-      - ghost-mysql
+      ghost-mysql:
+        condition: service_healthy
 
   ghost-mysql:
     image: mysql:8
@@ -32,6 +33,12 @@ services:
       MYSQL_PASSWORD: $MYSQL_PASSWORD
       MYSQL_DATABASE: ghost
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     networks:
       - frontend
 
