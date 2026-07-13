@@ -1,83 +1,85 @@
-# Scripts de sauvegarde et de mise à jour
+# Scripts de la stack
 
-Deux scripts, à configurer une fois sur le serveur de production.
+Quatre scripts, tous appelés par le `Makefile` — voir `make` à la racine.
 
-| Script | Rôle |
-|---|---|
-| [`backup_ghost.sh`](./backup_ghost.sh) | Dump MySQL + tout le dossier de la stack → dépôt borgwarehouse |
-| [`update_ghost.sh`](./update_ghost.sh) | Sauvegarde → `pull` → `up -d` → attente du healthcheck |
+| Script | Cible | Rôle |
+|---|---|---|
+| [`init_backup.sh`](./init_backup.sh) | `make init` | Configure la sauvegarde : clé SSH, dépôt BWH, `.env`, cron |
+| [`backup_ghost.sh`](./backup_ghost.sh) | `make backup` | Dump MySQL + tout le dossier de la stack → borgwarehouse |
+| [`check_backup.sh`](./check_backup.sh) | `make check` | Vérifie que la dernière sauvegarde est **restaurable** |
+| [`update_ghost.sh`](./update_ghost.sh) | `make update` | Sauvegarde → `pull` → `up -d` → attente du healthcheck |
+
+**Aucun script ne contient de secret.** Tous lisent le `.env` de la stack, que
+git ignore. C'est la convention de la bibliothèque
+[borgwarehouse](https://github.com/CoopCodeCommun/borgwarehouse), qui ne couvre
+pas MySQL — d'où le script Ghost.
+
+La mise en place et la vérification sont documentées dans le
+[README racine](../README.md). Ce fichier-ci ne décrit que ce qui se passe sous
+le capot.
+
+## Ce que contient une archive
 
 Le dump SQL est déposé dans `scripts/`, puis **tout le dossier de la stack** part
-dans une seule archive : le dump, le `content/` (images, thèmes), mais aussi le
-`.env` et le `docker-compose.yml`. Une archive suffit donc à remonter le site de
-zéro. Sont exclus `db/` (fichiers InnoDB — le dump est la seule forme fiable),
-`ghost/logs/`, `.git/`, et `scripts/.ssh/` : on ne met pas la clé du coffre dans
-le coffre.
+dans une seule archive : le dump, le `content/` (images, thèmes), le `.env` et le
+`docker-compose.yml`. Une archive suffit à remonter le site de zéro, et tout y
+est cohérent au même instant.
 
-Ils suivent les conventions de la bibliothèque
-[borgwarehouse](https://github.com/CoopCodeCommun/borgwarehouse) (style
-« CHANGE ME », clé SSH dédiée, mode `--init`, politique de prune identique), qui
-ne couvre pas MySQL — d'où ce script-ci.
+Quatre exclusions :
 
-## Configuration du backup (une seule fois)
+| Exclusion | Pourquoi |
+|---|---|
+| `db/` | Les fichiers InnoDB. Les copier à chaud donnerait une base corrompue — le dump SQL est la seule forme fiable. Ils sont de toute façon illisibles sans root. |
+| `ghost/logs/` | Volumineux, sans valeur |
+| `scripts/.ssh/` | La clé privée du dépôt : on ne met pas la clé du coffre dans le coffre |
+| `.git/` | Déjà sur GitHub |
 
-```bash
-cd /opt/ghost/scripts
+Le mot de passe root MySQL n'apparaît nulle part : il est lu **dans** le
+conteneur au moment du `mysqldump`. En revanche le `.env` est archivé, donc la
+passphrase du dépôt s'y trouve — sans conséquence, puisqu'il faut déjà cette
+passphrase pour ouvrir l'archive qui la contient.
 
-# 1. Générer une clé SSH dédiée à ce dépôt (une clé = un dépôt sur BWH)
-mkdir -p ./.ssh && chmod 700 ./.ssh
-ssh-keygen -t ed25519 -N '' -f ./.ssh/ghost_rtlx_ed25519
-cat ./.ssh/ghost_rtlx_ed25519.pub     # -> à coller dans le nouveau dépôt sur BWH
+## Deux protections discrètes
 
-# 2. Créer le dépôt sur l'interface borgwarehouse, y coller la clé publique,
-#    puis copier l'adresse SSH du dépôt.
+**Un verrou** (`flock`) empêche deux sauvegardes simultanées. Sans lui, un
+`make update` tombant pendant le cron partagerait le même dossier de dump : le
+premier à finir le supprime pendant que l'autre archive encore, et on obtient une
+archive **sans dump**, silencieusement.
 
-# 3. Renseigner les variables CHANGE ME en tête de backup_ghost.sh :
-#    PREFIX (= le nom de la clé, ici ghost_rtlx), BORG_REPO, BORG_PASSPHRASE
-#    La passphrase doit être stockée dans un coffre-fort numérique.
+**Le `prune` ne touche que les archives de cette stack** (`--glob-archives
+"$PREFIX-*"`). Si deux instances Ghost partageaient un jour le même dépôt, sans
+ce filtre elles se rogneraient mutuellement leur rétention, sans rien dire.
 
-# 4. Initialiser le dépôt
-./backup_ghost.sh --init
+## Rétention
 
-# 5. Première sauvegarde, puis vérifier qu'elle apparaît sur BWH
-./backup_ghost.sh
-```
-
-Le mot de passe root MySQL n'est **pas** recopié dans le script : il est lu à
-l'intérieur du conteneur au moment du `mysqldump`.
+7 jours glissants, 30 quotidiennes, 12 hebdomadaires, puis **toutes** les
+mensuelles et annuelles. C'est la politique en vigueur sur les autres dépôts
+borgwarehouse.
 
 ## Cron
 
-À lancer par `root` ou par un utilisateur membre du groupe `docker` :
+Posé par `make init`, dans le crontab de l'utilisateur (jamais écrasé : la ligne
+n'est ajoutée que si elle n'existe pas). Il appelle le script directement, pas
+`make` — ça éviterait une dépendance et un problème de répertoire courant pour
+rien :
 
 ```cron
-@daily bash /opt/ghost/scripts/backup_ghost.sh >> /var/log/backup_ghost.log 2>&1
+@daily bash /chemin/vers/la/stack/scripts/backup_ghost.sh >> $HOME/.ghost-backup-<prefix>.log 2>&1
 ```
 
-Rétention côté borg : 7 jours glissants, 30 quotidiennes, 12 hebdomadaires, puis
-mensuelles et annuelles conservées indéfiniment.
+Le log ne va **pas** dans `/var/log` : un utilisateur non-root ne peut pas y
+écrire, et quand la redirection échoue, cron n'exécute même pas la commande — on
+se retrouve sans sauvegarde *et* sans trace.
 
-Borgwarehouse envoie un mail si un dépôt dépasse son intervalle attendu : c'est
-le filet qui prévient qu'une sauvegarde n'est pas arrivée. Penser à régler cet
-intervalle sur le dépôt (24 h + marge).
+## Surveillance
 
-## Mise à jour
+Deux filets, complémentaires :
 
-```bash
-/opt/ghost/scripts/update_ghost.sh
-```
+- **`make check`** dit si la dernière sauvegarde est restaurable.
+- **borgwarehouse** envoie un mail si le dépôt ne reçoit plus rien (alerte réglée
+  par `make init`). C'est le seul mécanisme qui prévient qu'une sauvegarde
+  **n'est pas arrivée** — un cron qui échoue en silence, c'est un backup qui
+  n'existe pas.
 
-La sauvegarde est jouée avant le `pull`. C'est le point important : au premier
-démarrage d'une nouvelle version, Ghost applique ses migrations de schéma, et
-elles ne sont pas réversibles. Si le healthcheck ne repasse pas au vert, le
-script affiche les logs et sort en erreur — la marche à suivre est dans la
-section « Restauration » du [README racine](../README.md).
-
-L'image est épinglée sur `ghost:6-alpine` : les correctifs et versions mineures
-arrivent au `pull`, mais jamais une majeure par surprise. Le passage à Ghost 7,
-le jour venu, sera un changement explicite du `docker-compose.yml`.
-
-## Surveillance optionnelle
-
-Chaque script contient un hook **Sentry** commenté en tête, pour être alerté si
-le script lui-même échoue.
+Chaque script contient par ailleurs un hook **Sentry** commenté en tête, pour
+être alerté si le script lui-même échoue.

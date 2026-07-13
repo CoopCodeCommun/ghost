@@ -139,113 +139,77 @@ Les données vivent dans deux dossiers créés par Docker au premier démarrage 
 | `./ghost/` | Images, thèmes, paramètres (`content/` de Ghost) | Oui, tel quel |
 | `./db/` | Fichiers InnoDB de MySQL | Non — remplacé par le dump SQL |
 
-### Mise en place, pas à pas
+### Mise en place : `make init`
 
-Procédure pour le borgwarehouse de Code Commun :
-<https://borgwarehouse.codecommun.coop/> (SSH sur le port **2226**).
-
-**1. Installer borg sur le serveur, si absent**
+Une seule commande configure toute la sauvegarde vers le borgwarehouse de Code
+Commun (<https://borgwarehouse.codecommun.coop/>, SSH sur le port **2226**) :
 
 ```bash
 command -v borg || sudo apt install borgbackup
+make init
 ```
 
-**2. Générer une clé SSH dédiée à ce dépôt**
+Elle enchaîne : génération de la clé SSH dédiée (sur borgwarehouse, **une clé =
+un dépôt**), création du dépôt via l'API, tirage d'une passphrase, `borg init`,
+export de la clé, pose du cron, première sauvegarde et vérification.
 
-Sur borgwarehouse, **une clé SSH = un dépôt** : la clé est restreinte au seul
-dépôt auquel elle est associée. Une machine qui sauvegarde plusieurs instances
-Ghost a donc besoin d'une clé par instance. On la nomme d'après le `PREFIX`.
+Deux choses te seront demandées :
+
+**Un token API borgwarehouse** (*Account → Integrations*), qui permet de créer le
+dépôt automatiquement. Génère-le avec la **permission `create` uniquement** :
+c'est le seul appel que fait `make init` (`POST /api/v1/repositories`), tout le
+reste — `init`, `create`, `prune`, `list` — passant par SSH avec la clé dédiée.
+Un token *create-only* qui fuiterait ne permettrait ni de lister ni de supprimer
+tes dépôts, au pire d'en créer des parasites.
+
+Le token n'est de toute façon **jamais stocké** : il est saisi au clavier, et ne
+sert qu'une fois. Sans token, `make init` affiche la clé publique et te laisse
+créer le dépôt à la main dans l'interface, puis coller son adresse.
+
+**De confirmer que tu as mis la passphrase au coffre.** Le script affiche la
+passphrase, la clé exportée et l'adresse du dépôt, puis attend un `OUI`. Ce n'est
+pas une formalité : sans ces éléments, les archives sont un bloc chiffré
+définitivement illisible. C'est le seul maillon que la sauvegarde ne peut pas se
+sauvegarder elle-même. **Coffre-fort numérique, tout de suite.**
+
+`make init` est **rejouable**. Si l'API est injoignable, si `borg init` échoue ou
+si tu fais Ctrl-C en plein milieu, relance-le : il reprend ce qui existe déjà. Le
+seul cas où il refuse de continuer, c'est quand le dépôt **contient déjà des
+archives** — car régénérer une passphrase les rendrait illisibles.
+
+### Vérifier que la sauvegarde vaut quelque chose : `make check`
 
 ```bash
-cd <dossier-de-la-stack>/scripts
-mkdir -p ./.ssh && chmod 700 ./.ssh
-ssh-keygen -t ed25519 -N '' -f ./.ssh/ghost_upop_ed25519
-cat ./.ssh/ghost_upop_ed25519.pub
+make check
 ```
 
-**3. Créer le dépôt sur borgwarehouse**
+Il répond à la seule question qui compte — *est-ce restaurable ?* — sans rien
+restaurer :
 
-Sur <https://borgwarehouse.codecommun.coop/>, bouton **New repository** :
+1. **Fraîcheur** : la dernière archive de cette stack date de moins de 25 h.
+   Sinon, le cron est mort et personne ne l'avait remarqué.
+2. **Contenu** : l'archive contient bien le dump SQL, le `content/` et le `.env`.
+3. **Le dump est-il exploitable** : le dump est extrait en streaming (rien n'est
+   écrit sur le disque) et on y cherche le schéma de Ghost **et** le marqueur
+   `-- Dump completed` que `mysqldump` écrit en dernier. Un dump tronqué — disque
+   plein, conteneur tué en plein vol — a la bonne taille, se trouve bien dans
+   l'archive, et n'est pas restaurable. C'est précisément ce que ce test attrape.
 
-| Champ | Valeur |
-|---|---|
-| Repository name | `ghost_upop` |
-| SSH public key | le contenu de `ghost_upop_ed25519.pub` (étape 2) |
-| Size (quota) | selon la taille attendue du `content/` |
-| Alert | **1 day** — c'est ce qui déclenche le mail si aucune sauvegarde n'arrive |
-| Email alert | activé |
+Sortie en code non nul si quoi que ce soit cloche : utilisable tel quel dans un
+monitoring.
 
-Le réglage **Alert** est le cœur du dispositif : c'est la seule chose qui te
-préviendra qu'une sauvegarde *n'est pas arrivée*. Un cron qui échoue en silence,
-c'est un backup qui n'existe pas.
+**Ce que `make check` ne teste pas** : ta copie de coffre-fort. Il vérifie le
+dépôt avec le `.env` de la machine, pas avec la passphrase que tu as archivée
+ailleurs — or c'est celle-là, et elle seule, qui servira le jour où le serveur
+aura brûlé. Vérifie une fois, depuis une autre machine, qu'un `borg list` passe
+avec les éléments du coffre.
 
-Une fois le dépôt créé, la petite icône en haut à droite de sa vignette copie son
-adresse SSH, de la forme :
+### La surveillance ne vient pas d'ici
 
-```
-ssh://borgwarehouse@borgwarehouse.codecommun.coop:2226/./c7a620ed
-```
-
-**4. Générer une passphrase forte et la mettre au coffre**
-
-```bash
-openssl rand -base64 32
-```
-
-**5. Renseigner le bloc `SAUVEGARDE` du `.env`**
-
-Les secrets du dépôt vont dans le `.env`, **pas** dans le script :
-`backup_ghost.sh` est versionné, une passphrase écrite dedans finirait sur
-GitHub au premier `git add -A` distrait. Le `.env`, lui, est dans le
-`.gitignore`.
-
-```bash
-BORG_PREFIX=ghost_upop              # = le nom de la clé de l'étape 2
-BORG_REPO=ssh://borgwarehouse@borgwarehouse.codecommun.coop:2226/./c7a620ed
-BORG_PASSPHRASE=…                   # celle de l'étape 4
-```
-
-**6. Initialiser le dépôt**
-
-```bash
-./backup_ghost.sh --init
-```
-
-**7. Exporter la clé du dépôt et la mettre au coffre**
-
-Sans la passphrase **et** cette clé, les archives sont définitivement illisibles.
-C'est le seul maillon que la sauvegarde ne peut pas se sauvegarder elle-même.
-
-```bash
-borg key export "$BORG_REPO" ./key && cat ./key && rm ./key
-```
-
-Au coffre-fort numérique, donc : la **passphrase**, la **clé exportée**, et
-l'**identifiant du dépôt** (`c7a620ed`).
-
-**8. Première sauvegarde, et vérification**
-
-```bash
-./backup_ghost.sh
-```
-
-Puis vérifier sur l'interface borgwarehouse que le dépôt affiche bien sa taille
-et la date du dernier envoi.
-
-**9. Planifier le cron**
-
-À lancer par un utilisateur membre du groupe `docker` (ou `root`) :
-
-```bash
-crontab -e
-```
-
-```cron
-@daily bash /chemin/vers/la/stack/scripts/backup_ghost.sh >> /var/log/backup_ghost.log 2>&1
-```
-
-**10. Le lendemain, vérifier que l'archive du jour est bien arrivée.** Sans ça,
-les neuf étapes précédentes n'auront servi à rien.
+C'est **borgwarehouse** qui t'enverra un mail si le dépôt ne reçoit plus rien
+(alerte réglée par `make init` sur 25 h pour une sauvegarde quotidienne). Un cron
+qui échoue en silence, c'est un backup qui n'existe pas : `make check` te dit que
+la dernière sauvegarde est bonne, l'alerte BWH te prévient qu'il n'y en a plus.
 
 ### Rétention
 

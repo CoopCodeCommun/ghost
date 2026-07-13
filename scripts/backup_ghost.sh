@@ -79,10 +79,18 @@ DUMP_DIR="${DUMP_DIR:-$SCRIPT_DIR/mysql-dump-$PREFIX}"
 export BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK=yes
 export BORG_RELOCATED_REPO_ACCESS_IS_OK=yes
 
+# Un seul backup a la fois pour cette stack. Sans ce verrou, le cron qui tombe
+# pendant un `make update` (qui rejoue une sauvegarde) partagerait le meme
+# DUMP_DIR : le premier a finir le supprime — trap EXIT — pendant que l'autre
+# archive encore, et on obtient une archive SANS DUMP, silencieusement.
+exec 9>"$SCRIPT_DIR/.backup-$PREFIX.lock"
+flock -n 9 || { echo "[ghost-borg] une sauvegarde est deja en cours — abandon." >&2; exit 1; }
+
 : "${BORG_REPO:?BORG_REPO doit etre renseigne dans le .env}"
 : "${BORG_PASSPHRASE:?BORG_PASSPHRASE doit etre renseigne dans le .env}"
 command -v borg   >/dev/null || { echo "[ghost-borg] borg introuvable dans le PATH" >&2; exit 1; }
 command -v docker >/dev/null || { echo "[ghost-borg] docker introuvable dans le PATH" >&2; exit 1; }
+command -v flock  >/dev/null || { echo "[ghost-borg] flock introuvable dans le PATH" >&2; exit 1; }
 [ -f "$COMPOSE_FILE" ] || { echo "[ghost-borg] compose introuvable : $COMPOSE_FILE" >&2; exit 1; }
 
 DATE_NOW=$(date +%Y-%m-%d-%H-%M)
@@ -141,7 +149,11 @@ echo "$DATE_NOW on cree l'archive borg (dossier complet de la stack)"
   "$GHOST_DIR"
 
 echo "$DATE_NOW on prune les vieux borg :"
+# --glob-archives : le prune ne touche QUE les archives de cette stack. Si un
+# jour deux instances partagent le meme depot, chacune garde sa retention —
+# sans ce filtre, elles se rognent mutuellement, en silence.
 /usr/bin/borg prune -v --list \
+  --glob-archives "$PREFIX-*" \
   --keep-within=7d --keep-daily=30 --keep-weekly=12 --keep-monthly=-1 --keep-yearly=-1 \
   "$BORG_REPO"
 

@@ -4,6 +4,7 @@
 /ghost/
 /db/
 
-# Clés SSH des dépôts borg et dumps temporaires
+# Clés SSH des dépôts borg, dumps temporaires et verrous
 /scripts/.ssh/
 /scripts/mysql-dump-*/
+/scripts/.backup-*.lock
