@@ -1,2 +1,9 @@
 .env
 
+# Données de production, créées par Docker
+/ghost/
+/db/
+
+# Clés SSH des dépôts borg et dumps temporaires
+/scripts/.ssh/
+/scripts/mysql-dump-*/

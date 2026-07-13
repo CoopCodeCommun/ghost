@@ -1,2 +1,24 @@
-MYSQL_PASSWORD="CHANGEME_1234@33"
+# Copier ce fichier en .env sur le serveur, puis remplir chaque valeur.
+#   cp env_example .env
+
+# Domaine public du blog (sans https://). Doit pointer sur le serveur (A record).
 DOMAIN='ghost.localhost'
+
+# Base de donnees
+# ATTENTION : ces valeurs ne doivent plus jamais changer une fois la base initialisee.
+# Generer les mots de passe avec :  openssl rand -hex 32
+MYSQL_ROOT_PASSWORD="CHANGEME_root_1234@33"
+MYSQL_PASSWORD="CHANGEME_1234@33"
+# Utilisateur de la base. Ne le decommenter que pour une base deja initialisee
+# avec un autre nom (les anciennes installs utilisaient "user").
+# MYSQL_USER=ghost
+
+# SMTP — obligatoire en production.
+# Sert aux connexions du staff, aux invitations et aux resets de mot de passe.
+# Sans SMTP fonctionnel, tu ne peux plus te reconnecter si tu perds ta session.
+MAIL_HOST=smtp.example.com
+MAIL_PORT=465
+MAIL_SECURE=true
+MAIL_USER=support@example.com
+MAIL_PASSWORD=CHANGEME
+MAIL_FROM="'Mon Blog' <support@example.com>"
