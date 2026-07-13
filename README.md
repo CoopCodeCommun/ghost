@@ -72,6 +72,27 @@ Les variables `MAIL_*` du `.env` couvrent le cas courant (SMTP authentifié en
 TLS implicite, port 465). Pour un serveur en STARTTLS, mettre `MAIL_PORT=587` et
 `MAIL_SECURE=false`.
 
+### Newsletters : un second système, séparé
+
+Ghost a **deux canaux d'email qui n'ont rien à voir**, et c'est une source de
+confusion classique :
+
+| | Transactionnel | Newsletters (bulk) |
+|---|---|---|
+| Sert à | Connexions staff, invitations, resets, magic links | Envoyer un article à tous les abonnés |
+| Canal | SMTP, n'importe quel fournisseur | API **Mailgun uniquement** |
+| Réglé dans | `.env` (`MAIL_*`) | L'admin Ghost, ou `.env` (`MAILGUN_*`) |
+
+Le SMTP envoie un mail à la fois. Une newsletter, c'est un envoi de masse : le
+faire en SMTP classique ferait blacklister l'IP du serveur en quelques heures.
+Ghost délègue donc ça à une API qui gère la réputation d'envoi, les bounces et
+les plaintes spam — et [la seule supportée est
+Mailgun](https://docs.ghost.org/faq/mailgun-newsletters).
+
+**Le SMTP est obligatoire, Mailgun ne l'est pas.** Un site sans newsletter n'a
+pas besoin de Mailgun. Rien n'empêche par ailleurs d'utiliser Mailgun pour les
+deux, via son SMTP : ça reste deux réglages distincts, avec un seul fournisseur.
+
 ## Plusieurs Ghost sur le même serveur
 
 C'est prévu : rien n'est nommé en dur dans la stack. Chaque instance est un clone
@@ -162,9 +183,16 @@ refuse de démarrer sur un schéma trop récent.
 
 ## Dépannage
 
+**`Error dependency ghost-mysql failed to start`** au tout premier `up` — la
+première initialisation de MySQL (création des tables système) a dépassé le
+budget du healthcheck, et Ghost a abandonné son `depends_on`. Les healthchecks
+sont réglés large pour couvrir ce cas, mais sur un stockage très lent ça peut
+encore arriver. La base initialisée persiste dans `./db` : un simple
+`docker compose up -d` relance et repart de là.
+
 **Ghost reste `unhealthy`** — `docker compose logs ghost`. Les causes
-habituelles : une variable manquante dans le `.env`, ou MySQL qui n'a pas fini
-de démarrer (le `start_period` du healthcheck est de 90 s au premier lancement).
+habituelles : une variable manquante dans le `.env`, ou les migrations de schéma
+du premier démarrage encore en cours (elles peuvent prendre plusieurs minutes).
 
 **Erreur de connexion à la base** — vérifier qu'aucune des variables `MYSQL_*`
 n'a été modifiée depuis l'initialisation de la base.

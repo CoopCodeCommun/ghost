@@ -25,13 +25,24 @@ services:
       mail__options__auth__user: ${MAIL_USER:?MAIL_USER doit etre renseigne dans .env}
       mail__options__auth__pass: ${MAIL_PASSWORD:?MAIL_PASSWORD doit etre renseigne dans .env}
       mail__from: ${MAIL_FROM:?MAIL_FROM doit etre renseigne dans .env}
+
+      # Newsletters (bulk email) : rien a voir avec le SMTP ci-dessus, la seule API
+      # supportee par Ghost est Mailgun. Optionnel — se configure aussi depuis
+      # l'admin. Pour passer par le .env, decommenter ces 3 lignes ET les
+      # MAILGUN_* correspondantes (les laisser vides ferait croire a Ghost que
+      # Mailgun est configure).
+      # bulkEmail__mailgun__apiKey: ${MAILGUN_API_KEY}
+      # bulkEmail__mailgun__domain: ${MAILGUN_DOMAIN}
+      # bulkEmail__mailgun__baseUrl: ${MAILGUN_BASE_URL}
     healthcheck:
       # On ne suit pas les redirections : Ghost renvoie un 301 vers https://$DOMAIN
       # sur une requete locale en http. Tout code < 500 signifie "Ghost repond".
       test: ["CMD", "node", "-e", "require('http').get({host:'127.0.0.1',port:2368,path:'/ghost/api/admin/site/'},r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      # Au premier demarrage, Ghost joue ses migrations de schema : plusieurs
+      # minutes sur un disque lent. On lui laisse le temps.
+      retries: 10
       start_period: 90s
     labels:
       # Les noms de routers/services Traefik sont globaux : on les derive du nom
@@ -71,8 +82,12 @@ services:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 30s
+      # La toute PREMIERE initialisation de la base peut prendre plusieurs minutes
+      # sur un disque lent. Trop peu de retries ici et Ghost abandonne son
+      # depends_on avant que MySQL soit pret. Une fois la base initialisee, le
+      # demarrage prend ~5s : cette tolerance ne coute rien.
+      retries: 30
+      start_period: 60s
     logging:
       driver: json-file
       options:
