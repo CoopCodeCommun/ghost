@@ -124,22 +124,139 @@ Côté sauvegarde, chaque instance a **son propre dépôt borgwarehouse et sa pr
 clé SSH** (une clé = un dépôt). Il suffit d'un `PREFIX` distinct dans chaque
 `scripts/backup_ghost.sh`.
 
-## Sauvegarde et mise à jour
+## Sauvegarde
 
-Voir [`scripts/README.md`](./scripts/README.md).
+`scripts/backup_ghost.sh` dépose un dump MySQL dans le dossier de la stack, puis
+pousse **tout le dossier** dans une archive borg unique : le dump, le `content/`
+(images, thèmes), le `.env` et le `docker-compose.yml`. Une archive suffit donc à
+remonter le site de zéro. Détails et exclusions dans
+[`scripts/README.md`](./scripts/README.md).
 
-En résumé : `scripts/backup_ghost.sh` pousse un dump MySQL et le dossier
-`content/` dans une archive borg unique, quotidiennement par cron.
-`scripts/update_ghost.sh` rejoue cette sauvegarde avant chaque `docker compose
-pull`, puis attend que Ghost repasse au vert.
+Les données vivent dans deux dossiers créés par Docker au premier démarrage :
 
-Les données vivent dans deux dossiers du dépôt, créés par Docker au premier
-démarrage :
+| Dossier | Contenu | Sauvegardé ? |
+|---|---|---|
+| `./ghost/` | Images, thèmes, paramètres (`content/` de Ghost) | Oui, tel quel |
+| `./db/` | Fichiers InnoDB de MySQL | Non — remplacé par le dump SQL |
 
-| Dossier | Contenu |
+### Mise en place, pas à pas
+
+Procédure pour le borgwarehouse de Code Commun :
+<https://borgwarehouse.codecommun.coop/> (SSH sur le port **2226**).
+
+**1. Installer borg sur le serveur, si absent**
+
+```bash
+command -v borg || sudo apt install borgbackup
+```
+
+**2. Générer une clé SSH dédiée à ce dépôt**
+
+Sur borgwarehouse, **une clé SSH = un dépôt** : la clé est restreinte au seul
+dépôt auquel elle est associée. Une machine qui sauvegarde plusieurs instances
+Ghost a donc besoin d'une clé par instance. On la nomme d'après le `PREFIX`.
+
+```bash
+cd <dossier-de-la-stack>/scripts
+mkdir -p ./.ssh && chmod 700 ./.ssh
+ssh-keygen -t ed25519 -N '' -f ./.ssh/ghost_upop_ed25519
+cat ./.ssh/ghost_upop_ed25519.pub
+```
+
+**3. Créer le dépôt sur borgwarehouse**
+
+Sur <https://borgwarehouse.codecommun.coop/>, bouton **New repository** :
+
+| Champ | Valeur |
 |---|---|
-| `./ghost/` | Images, thèmes, paramètres (`content/` de Ghost) |
-| `./db/` | Fichiers de la base MySQL |
+| Repository name | `ghost_upop` |
+| SSH public key | le contenu de `ghost_upop_ed25519.pub` (étape 2) |
+| Size (quota) | selon la taille attendue du `content/` |
+| Alert | **1 day** — c'est ce qui déclenche le mail si aucune sauvegarde n'arrive |
+| Email alert | activé |
+
+Le réglage **Alert** est le cœur du dispositif : c'est la seule chose qui te
+préviendra qu'une sauvegarde *n'est pas arrivée*. Un cron qui échoue en silence,
+c'est un backup qui n'existe pas.
+
+Une fois le dépôt créé, la petite icône en haut à droite de sa vignette copie son
+adresse SSH, de la forme :
+
+```
+ssh://borgwarehouse@borgwarehouse.codecommun.coop:2226/./c7a620ed
+```
+
+**4. Générer une passphrase forte et la mettre au coffre**
+
+```bash
+openssl rand -base64 32
+```
+
+**5. Renseigner le bloc `SAUVEGARDE` du `.env`**
+
+Les secrets du dépôt vont dans le `.env`, **pas** dans le script :
+`backup_ghost.sh` est versionné, une passphrase écrite dedans finirait sur
+GitHub au premier `git add -A` distrait. Le `.env`, lui, est dans le
+`.gitignore`.
+
+```bash
+BORG_PREFIX=ghost_upop              # = le nom de la clé de l'étape 2
+BORG_REPO=ssh://borgwarehouse@borgwarehouse.codecommun.coop:2226/./c7a620ed
+BORG_PASSPHRASE=…                   # celle de l'étape 4
+```
+
+**6. Initialiser le dépôt**
+
+```bash
+./backup_ghost.sh --init
+```
+
+**7. Exporter la clé du dépôt et la mettre au coffre**
+
+Sans la passphrase **et** cette clé, les archives sont définitivement illisibles.
+C'est le seul maillon que la sauvegarde ne peut pas se sauvegarder elle-même.
+
+```bash
+borg key export "$BORG_REPO" ./key && cat ./key && rm ./key
+```
+
+Au coffre-fort numérique, donc : la **passphrase**, la **clé exportée**, et
+l'**identifiant du dépôt** (`c7a620ed`).
+
+**8. Première sauvegarde, et vérification**
+
+```bash
+./backup_ghost.sh
+```
+
+Puis vérifier sur l'interface borgwarehouse que le dépôt affiche bien sa taille
+et la date du dernier envoi.
+
+**9. Planifier le cron**
+
+À lancer par un utilisateur membre du groupe `docker` (ou `root`) :
+
+```bash
+crontab -e
+```
+
+```cron
+@daily bash /chemin/vers/la/stack/scripts/backup_ghost.sh >> /var/log/backup_ghost.log 2>&1
+```
+
+**10. Le lendemain, vérifier que l'archive du jour est bien arrivée.** Sans ça,
+les neuf étapes précédentes n'auront servi à rien.
+
+### Rétention
+
+Le `prune` conserve 7 jours glissants, 30 sauvegardes quotidiennes, 12
+hebdomadaires, puis **toutes** les mensuelles et annuelles.
+
+## Mise à jour
+
+`scripts/update_ghost.sh` rejoue la sauvegarde avant chaque `docker compose
+pull`, puis attend que Ghost repasse au vert. Voir
+[`scripts/README.md`](./scripts/README.md).
 
 ## Restauration
 

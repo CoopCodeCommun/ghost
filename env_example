@@ -30,3 +30,17 @@ MAIL_USER=support@example.com
 MAIL_PASSWORD=CHANGEME
 MAIL_FROM="Mon Blog <support@example.com>"
 
+# SAUVEGARDE — depot borg sur borgwarehouse (scripts/backup_ghost.sh).
+# Ces valeurs vivent ici, et PAS dans le script : le script est versionne, ce
+# fichier ne l'est pas.
+#
+# Nom affiche au debut de chaque archive. Sert aussi a nommer la cle SSH du
+# depot : scripts/.ssh/<BORG_PREFIX>_ed25519
+BORG_PREFIX=ghost_upop
+# Adresse du depot, copiee depuis sa vignette sur borgwarehouse.
+BORG_REPO=ssh://borgwarehouse@borgwarehouse.codecommun.coop:2226/./c7a620ed
+# Passphrase du depot :  openssl rand -base64 32
+# A STOCKER AU COFFRE avec la cle exportee (borg key export) et l'id du depot.
+# Sans elles, les archives sont definitivement illisibles.
+BORG_PASSPHRASE=CHANGEME
+

@@ -19,22 +19,29 @@ set -euo pipefail
 #                 qu'elle protege. La garder au coffre (voir --init ci-dessous).
 #   .git/         deja sur GitHub
 #
-# NB : ce script est lui-meme archive, avec sa BORG_PASSPHRASE en clair. C'est
-# sans consequence : il faut deja cette passphrase pour ouvrir l'archive.
+# CONFIGURATION : ce script ne contient AUCUN secret. Il lit BORG_PREFIX,
+# BORG_REPO et BORG_PASSPHRASE dans le .env de la stack — le seul fichier que
+# git ignore. Ce script, lui, est versionne : y ecrire une passphrase, c'est
+# la pousser sur GitHub au premier `git add -A` distrait.
+#
+# NB : le .env part donc dans l'archive, passphrase du depot comprise. C'est
+# sans consequence : il faut deja connaitre cette passphrase pour ouvrir
+# l'archive qui la contient.
 #
 # 1- Ce script vit dans le dossier scripts/ de la stack Ghost, sur le serveur.
-# 2- Choisir un PREFIX, puis generer une cle SSH DEDIEE a ce depot
+# 2- Choisir un BORG_PREFIX, puis generer une cle SSH DEDIEE a ce depot
 #    (une cle = un depot sur borgwarehouse) :
 #      mkdir -p ./.ssh && chmod 700 ./.ssh
-#      ssh-keygen -t ed25519 -N '' -f ./.ssh/ghost_rtlx_ed25519      # nom = $PREFIX
-# 3- Creer un depot dans borgwarehouse, y coller ./.ssh/ghost_rtlx_ed25519.pub
-# 4- Renseigner les variables CHANGE ME ci-dessous.
+#      ssh-keygen -t ed25519 -N '' -f ./.ssh/ghost_upop_ed25519   # nom = $BORG_PREFIX
+# 3- Creer un depot dans borgwarehouse, y coller ./.ssh/ghost_upop_ed25519.pub
+# 4- Renseigner le bloc SAUVEGARDE du .env (voir env_example).
 # 5- Initier le depot :   ./backup_ghost.sh --init
 # 6- Sauvegarder :        ./backup_ghost.sh
 # 7- Cron (a lancer par un utilisateur membre du groupe docker, ou root) :
 #      @daily bash /opt/ghost/scripts/backup_ghost.sh >> /var/log/backup_ghost.log 2>&1
 #
-# Le mot de passe root MySQL n'est PAS recopie ici : il est lu dans le conteneur.
+# Le mot de passe root MySQL n'est PAS recopie ici non plus : il est lu dans le
+# conteneur au moment du dump.
 #####
 
 ## Surveillance optionnelle via Sentry :
@@ -50,16 +57,16 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 GHOST_DIR="${GHOST_DIR:-$(dirname "$SCRIPT_DIR")}"
 COMPOSE_FILE="$GHOST_DIR/docker-compose.yml"
 CONTENT_DIR="$GHOST_DIR/ghost"
+ENV_FILE="$GHOST_DIR/.env"
 
-# CHANGE ME : nom affiche au debut de chaque archive. ex : ghost_rtlx
-PREFIX=""
+# Les secrets du depot borg viennent du .env de la stack (ignore par git).
+[ -f "$ENV_FILE" ] || { echo "[ghost-borg] .env introuvable : $ENV_FILE" >&2; exit 1; }
+set -a
+# shellcheck disable=SC1090
+. "$ENV_FILE"
+set +a
 
-# CHANGE ME : adresse du depot, identique a celle de la creation du depot borg
-# ex : ssh://borgwarehouse@localhost:2226/./674b31c6
-export BORG_REPO=""
-
-# CHANGE ME : passphrase generee lors de la creation du depot borg
-export BORG_PASSPHRASE=""
+PREFIX="${BORG_PREFIX:?BORG_PREFIX doit etre renseigne dans le .env}"
 
 # Cle SSH DEDIEE a ce depot (une cle = un depot sur borgwarehouse).
 SSH_KEY="$SCRIPT_DIR/.ssh/${PREFIX}_ed25519"
@@ -72,8 +79,8 @@ DUMP_DIR="${DUMP_DIR:-$SCRIPT_DIR/mysql-dump-$PREFIX}"
 export BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK=yes
 export BORG_RELOCATED_REPO_ACCESS_IS_OK=yes
 
-: "${BORG_REPO:?BORG_REPO doit etre renseigne (CHANGE ME)}"
-: "${PREFIX:?PREFIX doit etre renseigne (CHANGE ME)}"
+: "${BORG_REPO:?BORG_REPO doit etre renseigne dans le .env}"
+: "${BORG_PASSPHRASE:?BORG_PASSPHRASE doit etre renseigne dans le .env}"
 command -v borg   >/dev/null || { echo "[ghost-borg] borg introuvable dans le PATH" >&2; exit 1; }
 command -v docker >/dev/null || { echo "[ghost-borg] docker introuvable dans le PATH" >&2; exit 1; }
 [ -f "$COMPOSE_FILE" ] || { echo "[ghost-borg] compose introuvable : $COMPOSE_FILE" >&2; exit 1; }
