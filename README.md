@@ -143,43 +143,76 @@ démarrage :
 
 ## Restauration
 
-Depuis une archive borg (à faire depuis le dossier de la stack) :
+Une archive contient **tout le dossier de la stack** : le dump SQL, le `content/`
+(images, thèmes), le `.env` et le `docker-compose.yml`. Il n'y a donc rien à
+reconstruire à la main.
+
+### Repartir de zéro (le serveur a brûlé)
 
 ```bash
-cd /opt/ghost
+# Sur la nouvelle machine, avec borg installé.
+# La clé SSH du dépôt n'est PAS dans l'archive (voir plus bas) : en générer une
+# nouvelle et l'ajouter au dépôt depuis l'interface borgwarehouse.
+ssh-keygen -t ed25519 -N '' -f ~/.ssh/ghost_restore_ed25519
+cat ~/.ssh/ghost_restore_ed25519.pub     # → à ajouter au dépôt sur BWH
 
-# Charger les identifiants du dépôt (les mêmes que dans backup_ghost.sh)
 export BORG_REPO='ssh://borgwarehouse@…/./xxxxxxxx'
-export BORG_PASSPHRASE='…'
-export BORG_RSH="ssh -i /opt/ghost/scripts/.ssh/ghost_rtlx_ed25519 -oIdentitiesOnly=yes"
+export BORG_PASSPHRASE='…'               # depuis le coffre-fort
+export BORG_RSH="ssh -i ~/.ssh/ghost_restore_ed25519 -oIdentitiesOnly=yes"
 
-borg list                                    # choisir l'archive
-borg extract --list "$BORG_REPO::<archive>"  # extrait dans le dossier courant
-
+borg list                                # choisir l'archive
+borg extract --list "$BORG_REPO::<archive>"
 # L'extraction recrée l'arborescence absolue d'origine, sans le / initial :
-#   opt/ghost/scripts/mysql-dump-<prefix>/ghost.sql   <- le dump
-#   opt/ghost/ghost/                                  <- le contenu
+#   home/jonas/…/upop_ghost/            <- le dossier complet, .env compris
 
-# 1. Restaurer les fichiers
-docker compose stop ghost
-rsync -a --delete opt/ghost/ghost/ ./ghost/
+cd home/jonas/…/upop_ghost/              # ou déplacer le dossier où on veut
 
-# 2. Restaurer la base
+# La base repart vide (db/ n'est pas sauvegardé), puis on y injecte le dump.
 docker compose up -d ghost-mysql
 docker compose exec -T ghost-mysql \
   sh -c 'exec mysql -u root -p"$MYSQL_ROOT_PASSWORD" ghost' \
-  < opt/ghost/scripts/mysql-dump-<prefix>/ghost.sql
+  < scripts/mysql-dump-<prefix>/ghost.sql
 
-# 3. Redémarrer
 docker compose up -d
 docker compose logs -f ghost
 ```
 
-Si la restauration fait suite à une mise à jour ratée, remettre aussi le
-`docker-compose.yml` sur la version d'image précédente **avant** de redémarrer :
-une base restaurée depuis une version antérieure ne sera pas lue par un Ghost
-plus récent tant qu'il n'a pas rejoué ses migrations, et un Ghost plus ancien
+### Restaurer une instance qui tourne encore
+
+```bash
+cd ~/tank/Gits/upop_ghost
+docker compose stop ghost                # on laisse MySQL debout
+
+borg extract --list "$BORG_REPO::<archive>"   # extrait dans le dossier courant
+rsync -a --delete <chemin-extrait>/ghost/ ./ghost/
+
+docker compose exec -T ghost-mysql \
+  sh -c 'exec mysql -u root -p"$MYSQL_ROOT_PASSWORD" ghost' \
+  < <chemin-extrait>/scripts/mysql-dump-<prefix>/ghost.sql
+
+docker compose up -d
+```
+
+### Après une mise à jour ratée
+
+Remettre aussi le `docker-compose.yml` sur la version d'image précédente **avant**
+de redémarrer. Ghost joue ses migrations de schéma au premier démarrage d'une
+nouvelle version, et elles ne sont pas réversibles : un Ghost récent sur une base
+restaurée d'une version antérieure la migrera à nouveau, et un Ghost ancien
 refuse de démarrer sur un schéma trop récent.
+
+### Ce qui n'est pas dans l'archive
+
+La **clé SSH du dépôt** (`scripts/.ssh/`) : on ne met pas la clé du coffre dans le
+coffre. En cas de perte totale, on en génère une nouvelle et on l'ajoute au dépôt
+depuis l'interface borgwarehouse.
+
+Doivent donc vivre **dans un coffre-fort numérique**, sans quoi la sauvegarde est
+irrécupérable :
+
+- la **passphrase** du dépôt borg,
+- la **clé du dépôt** exportée (`borg key export`),
+- l'identifiant du dépôt (ex. `c7a620ed`).
 
 ## Dépannage
 

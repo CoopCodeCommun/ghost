@@ -3,11 +3,24 @@ set -euo pipefail
 
 ##### INSTRUCTION
 #
-# Sauvegarde d'une instance Ghost (base MySQL + dossier content) vers un depot
-# borgwarehouse (BWH).
-# Principe : mysqldump coherent + dossier content -> UNE archive borg -> prune.
-# Base et fichiers sont dans la meme archive : une restauration n'a de sens que
-# si les deux sont coherents entre eux.
+# Sauvegarde d'une instance Ghost vers un depot borgwarehouse (BWH).
+#
+# Principe : mysqldump coherent depose dans le dossier de la stack, puis TOUT le
+# dossier part dans UNE archive borg. L'archive contient donc le dump, le content
+# (images, themes), le .env et le docker-compose.yml : tout ce qu'il faut pour
+# remonter le site de zero, et le tout coherent au meme instant.
+#
+# Exclusions :
+#   db/           fichiers InnoDB — les copier a chaud donnerait une base corrompue,
+#                 le dump SQL est la seule forme fiable (et ils sont illisibles
+#                 sans root de toute facon)
+#   ghost/logs/   volumineux, sans valeur
+#   scripts/.ssh/ la cle privee du depot : on ne l'archive pas dans le depot
+#                 qu'elle protege. La garder au coffre (voir --init ci-dessous).
+#   .git/         deja sur GitHub
+#
+# NB : ce script est lui-meme archive, avec sa BORG_PASSPHRASE en clair. C'est
+# sans consequence : il faut deja cette passphrase pour ouvrir l'archive.
 #
 # 1- Ce script vit dans le dossier scripts/ de la stack Ghost, sur le serveur.
 # 2- Choisir un PREFIX, puis generer une cle SSH DEDIEE a ce depot
@@ -108,11 +121,17 @@ fi
 
 
 #### BORG CREATE ####
-echo "$DATE_NOW on cree l'archive borg (dump + content)"
+# On archive TOUT le dossier de la stack : le dump (depose dans scripts/), le
+# content, mais aussi le .env et le docker-compose.yml. Une archive contient
+# ainsi tout ce qu'il faut pour remonter le site de zero.
+echo "$DATE_NOW on cree l'archive borg (dossier complet de la stack)"
 /usr/bin/borg create -vs --compression lz4 \
-  --exclude "$CONTENT_DIR/logs" \
+  --exclude "$GHOST_DIR/db" \
+  --exclude "$GHOST_DIR/ghost/logs" \
+  --exclude "$GHOST_DIR/scripts/.ssh" \
+  --exclude "$GHOST_DIR/.git" \
   "$BORG_REPO::$PREFIX-$DATE_NOW" \
-  "$DUMP_DIR" "$CONTENT_DIR"
+  "$GHOST_DIR"
 
 echo "$DATE_NOW on prune les vieux borg :"
 /usr/bin/borg prune -v --list \

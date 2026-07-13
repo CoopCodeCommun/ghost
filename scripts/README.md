@@ -4,8 +4,15 @@ Deux scripts, à configurer une fois sur le serveur de production.
 
 | Script | Rôle |
 |---|---|
-| [`backup_ghost.sh`](./backup_ghost.sh) | Dump MySQL + dossier `content/` → dépôt borgwarehouse |
+| [`backup_ghost.sh`](./backup_ghost.sh) | Dump MySQL + tout le dossier de la stack → dépôt borgwarehouse |
 | [`update_ghost.sh`](./update_ghost.sh) | Sauvegarde → `pull` → `up -d` → attente du healthcheck |
+
+Le dump SQL est déposé dans `scripts/`, puis **tout le dossier de la stack** part
+dans une seule archive : le dump, le `content/` (images, thèmes), mais aussi le
+`.env` et le `docker-compose.yml`. Une archive suffit donc à remonter le site de
+zéro. Sont exclus `db/` (fichiers InnoDB — le dump est la seule forme fiable),
+`ghost/logs/`, `.git/`, et `scripts/.ssh/` : on ne met pas la clé du coffre dans
+le coffre.
 
 Ils suivent les conventions de la bibliothèque
 [borgwarehouse](https://github.com/CoopCodeCommun/borgwarehouse) (style

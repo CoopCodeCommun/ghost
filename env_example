@@ -23,28 +23,10 @@ MYSQL_PASSWORD="CHANGEME_1234@33"
 # SMTP — obligatoire en production.
 # Sert aux connexions du staff, aux invitations et aux resets de mot de passe.
 # Sans SMTP fonctionnel, tu ne peux plus te reconnecter si tu perds ta session.
-MAIL_HOST=smtp.example.com
+MAIL_HOST=smtp.eu.mailgun.org
 MAIL_PORT=465
 MAIL_SECURE=true
 MAIL_USER=support@example.com
 MAIL_PASSWORD=CHANGEME
-MAIL_FROM="'Mon Blog' <support@example.com>"
+MAIL_FROM="Mon Blog <support@example.com>"
 
-# NEWSLETTERS (bulk email) — optionnel, et SANS RAPPORT avec le SMTP ci-dessus.
-#
-# Le SMTP envoie les mails a l'unite (connexions, invitations, resets).
-# L'envoi d'une newsletter a des milliers d'abonnes est un autre metier : Ghost
-# le delegue a une API, et la SEULE supportee est Mailgun. Inutile si le site
-# n'envoie pas de newsletter.
-#
-# Deux facons de le configurer, au choix :
-#   a) dans l'admin Ghost (Settings > Email newsletter) : la cle est stockee en
-#      base, donc couverte par le backup mais absente de ce fichier ;
-#   b) ici, pour que toute la config du site tienne dans le .env. Dans ce cas il
-#      faut AUSSI decommenter le bloc bulkEmail__* du docker-compose.yml.
-#
-# PIEGE : un compte Mailgun cree en region Europe exige la baseUrl EU ci-dessous.
-# L'oublier est la cause n°1 des newsletters qui ne partent jamais.
-# MAILGUN_API_KEY=key-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-# MAILGUN_DOMAIN=mg.example.com
-# MAILGUN_BASE_URL=https://api.eu.mailgun.net/v3     # region US : https://api.mailgun.net/v3

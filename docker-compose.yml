@@ -26,14 +26,6 @@ services:
       mail__options__auth__pass: ${MAIL_PASSWORD:?MAIL_PASSWORD doit etre renseigne dans .env}
       mail__from: ${MAIL_FROM:?MAIL_FROM doit etre renseigne dans .env}
 
-      # Newsletters (bulk email) : rien a voir avec le SMTP ci-dessus, la seule API
-      # supportee par Ghost est Mailgun. Optionnel — se configure aussi depuis
-      # l'admin. Pour passer par le .env, decommenter ces 3 lignes ET les
-      # MAILGUN_* correspondantes (les laisser vides ferait croire a Ghost que
-      # Mailgun est configure).
-      # bulkEmail__mailgun__apiKey: ${MAILGUN_API_KEY}
-      # bulkEmail__mailgun__domain: ${MAILGUN_DOMAIN}
-      # bulkEmail__mailgun__baseUrl: ${MAILGUN_BASE_URL}
     healthcheck:
       # On ne suit pas les redirections : Ghost renvoie un 301 vers https://$DOMAIN
       # sur une requete locale en http. Tout code < 500 signifie "Ghost repond".
