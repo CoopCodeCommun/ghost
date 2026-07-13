@@ -5,13 +5,15 @@ borgwarehouse et script de mise à jour.
 
 ## Prérequis sur le serveur
 
-- Docker et le plugin `compose`.
+- Docker et le plugin `compose`, et `make`.
 - Un Traefik déjà en place, avec un réseau Docker externe nommé `frontend` et un
   certresolver nommé `myresolver`. (Si tes noms diffèrent, adapte les `labels`
   et le bloc `networks` du `docker-compose.yml`.)
 - Un enregistrement DNS A pointant le domaine du blog vers le serveur.
 - Un compte SMTP (voir plus bas — ce n'est pas optionnel).
 - `borg` installé sur l'hôte, et un serveur borgwarehouse joignable.
+
+Un `make` sans argument liste tout ce qu'on peut faire sur cette stack.
 
 ## Installation
 
@@ -26,7 +28,7 @@ openssl rand -hex 32        # pour MYSQL_PASSWORD
 nano .env
 
 # Lancer
-docker compose up -d && docker compose logs -f ghost
+make up && make logs
 ```
 
 Puis se rendre sur `https://<DOMAIN>/ghost/` pour créer le compte propriétaire.
@@ -36,8 +38,11 @@ qui arrivant sur cette URL peut le créer.
 Vérifier que tout est vert :
 
 ```bash
-docker compose ps        # les deux conteneurs doivent être "healthy"
+make ps        # les deux conteneurs doivent être "healthy"
 ```
+
+Puis configurer la sauvegarde : `make init` (voir plus bas). Une stack sans
+sauvegarde n'est pas en production.
 
 ## Configuration
 
@@ -81,7 +86,7 @@ confusion classique :
 |---|---|---|
 | Sert à | Connexions staff, invitations, resets, magic links | Envoyer un article à tous les abonnés |
 | Canal | SMTP, n'importe quel fournisseur | API **Mailgun uniquement** |
-| Réglé dans | `.env` (`MAIL_*`) | L'admin Ghost, ou `.env` (`MAILGUN_*`) |
+| Réglé dans | `.env` (`MAIL_*`) | L'admin Ghost (*Settings → Email newsletter*) |
 
 Le SMTP envoie un mail à la fois. Une newsletter, c'est un envoi de masse : le
 faire en SMTP classique ferait blacklister l'IP du serveur en quelques heures.
@@ -121,15 +126,16 @@ relatifs au dossier de la stack. Seul le réseau `frontend` est partagé, ce qui
 est justement le but — c'est par là que Traefik les atteint.
 
 Côté sauvegarde, chaque instance a **son propre dépôt borgwarehouse et sa propre
-clé SSH** (une clé = un dépôt). Il suffit d'un `PREFIX` distinct dans chaque
-`scripts/backup_ghost.sh`.
+clé SSH** (une clé = un dépôt). Rien à faire de particulier : `make init`, lancé
+dans le dossier de chaque instance, crée un dépôt distinct et une clé distincte,
+et pose sa propre ligne de cron.
 
 ## Sauvegarde
 
-`scripts/backup_ghost.sh` dépose un dump MySQL dans le dossier de la stack, puis
-pousse **tout le dossier** dans une archive borg unique : le dump, le `content/`
-(images, thèmes), le `.env` et le `docker-compose.yml`. Une archive suffit donc à
-remonter le site de zéro. Détails et exclusions dans
+`make backup` dépose un dump MySQL dans le dossier de la stack, puis pousse **tout
+le dossier** dans une archive borg unique : le dump, le `content/` (images,
+thèmes), le `.env` et le `docker-compose.yml`. Une archive suffit donc à remonter
+le site de zéro. Détails et exclusions dans
 [`scripts/README.md`](./scripts/README.md).
 
 Les données vivent dans deux dossiers créés par Docker au premier démarrage :
@@ -218,9 +224,22 @@ hebdomadaires, puis **toutes** les mensuelles et annuelles.
 
 ## Mise à jour
 
-`scripts/update_ghost.sh` rejoue la sauvegarde avant chaque `docker compose
-pull`, puis attend que Ghost repasse au vert. Voir
-[`scripts/README.md`](./scripts/README.md).
+```bash
+make update
+```
+
+Il rejoue une sauvegarde **avant** le `docker compose pull`, puis attend que Ghost
+repasse au vert (et sort en erreur en affichant les logs si ce n'est pas le cas).
+
+L'ordre n'est pas décoratif : au premier démarrage d'une nouvelle version, Ghost
+joue ses migrations de schéma — plusieurs minutes — et **elles ne sont pas
+réversibles**. Si l'une d'elles se passe mal, la seule issue est de revenir à
+l'image précédente *et* de restaurer la base. D'où le dump vieux de trois minutes
+plutôt que de la veille.
+
+L'image est épinglée sur `ghost:6-alpine` : les correctifs et versions mineures
+arrivent au `pull`, jamais une majeure par surprise. Le passage à Ghost 7, le jour
+venu, sera un changement explicite du `docker-compose.yml`.
 
 ## Restauration
 
