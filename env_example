@@ -1,6 +1,13 @@
 # Copier ce fichier en .env sur le serveur, puis remplir chaque valeur.
 #   cp env_example .env
 
+# Nom de cette instance. Doit etre UNIQUE sur le serveur : il nomme les
+# conteneurs, le reseau prive et les routers Traefik. C'est ce qui permet a
+# plusieurs Ghost de cohabiter sur la meme machine.
+# Minuscules, chiffres et tirets uniquement.
+# Si tu le laisses vide, compose prend le nom du dossier de la stack.
+COMPOSE_PROJECT_NAME=ghost-rtlx
+
 # Domaine public du blog (sans https://). Doit pointer sur le serveur (A record).
 DOMAIN='ghost.localhost'
 

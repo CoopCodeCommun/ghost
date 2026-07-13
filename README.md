@@ -72,6 +72,37 @@ Les variables `MAIL_*` du `.env` couvrent le cas courant (SMTP authentifié en
 TLS implicite, port 465). Pour un serveur en STARTTLS, mettre `MAIL_PORT=587` et
 `MAIL_SECURE=false`.
 
+## Plusieurs Ghost sur le même serveur
+
+C'est prévu : rien n'est nommé en dur dans la stack. Chaque instance est un clone
+du dépôt dans son propre dossier, avec son `.env`.
+
+```bash
+git clone https://github.com/CoopCodeCommun/ghost /opt/ghost-lecafe
+cd /opt/ghost-lecafe
+cp env_example .env
+```
+
+Deux variables doivent différer d'une instance à l'autre :
+
+| Variable | Rôle |
+|---|---|
+| `COMPOSE_PROJECT_NAME` | Unique sur le serveur. Nomme les conteneurs, le réseau privé et les routers Traefik. |
+| `DOMAIN` | Le domaine du blog, forcément différent. |
+
+Les mots de passe MySQL, eux, sont **propres à chaque instance** : chaque stack a
+sa base, dans son propre dossier `./db`. Ne pas les recopier d'une instance à
+l'autre.
+
+Le reste s'isole tout seul : les conteneurs sont nommés d'après le projet, le
+réseau `backend` est préfixé par Docker, et les dossiers `ghost/` et `db/` sont
+relatifs au dossier de la stack. Seul le réseau `frontend` est partagé, ce qui
+est justement le but — c'est par là que Traefik les atteint.
+
+Côté sauvegarde, chaque instance a **son propre dépôt borgwarehouse et sa propre
+clé SSH** (une clé = un dépôt). Il suffit d'un `PREFIX` distinct dans chaque
+`scripts/backup_ghost.sh`.
+
 ## Sauvegarde et mise à jour
 
 Voir [`scripts/README.md`](./scripts/README.md).
@@ -140,7 +171,7 @@ n'a été modifiée depuis l'initialisation de la base.
 
 **Traefik ne route pas** — vérifier que le réseau `frontend` existe
 (`docker network ls`) et que le conteneur y est bien attaché
-(`docker inspect ghost-rtlx`).
+(`docker inspect $(docker compose ps -q ghost)`).
 
 **Certificat non émis** — le DNS doit pointer sur le serveur *avant* le premier
 démarrage, sinon le certresolver échoue et retente avec un délai.

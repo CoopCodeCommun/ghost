@@ -1,8 +1,9 @@
+# Plusieurs instances Ghost peuvent cohabiter sur le meme serveur : chaque stack
+# a son dossier, son COMPOSE_PROJECT_NAME et son DOMAIN (voir README).
+# D'ou l'absence de container_name : Docker nomme les conteneurs d'apres le projet.
 services:
   ghost:
     image: ghost:6-alpine
-    container_name: ghost-rtlx
-    hostname: ghost-RTLx
     restart: unless-stopped
     volumes:
       - ./ghost:/var/lib/ghost/content
@@ -33,11 +34,14 @@ services:
       retries: 5
       start_period: 90s
     labels:
+      # Les noms de routers/services Traefik sont globaux : on les derive du nom
+      # de projet pour que deux Ghost sur le meme serveur ne se marchent pas dessus.
+      # A defaut de COMPOSE_PROJECT_NAME dans .env, compose prend le nom du dossier.
       - traefik.enable=true
       - traefik.docker.network=frontend
-      - traefik.http.routers.ghost-rtlx.tls.certresolver=myresolver
-      - traefik.http.routers.ghost-rtlx.rule=Host(`$DOMAIN`)
-      - traefik.http.services.ghost-rtlx.loadbalancer.server.port=2368
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}.tls.certresolver=myresolver
+      - traefik.http.routers.${COMPOSE_PROJECT_NAME}.rule=Host(`$DOMAIN`)
+      - traefik.http.services.${COMPOSE_PROJECT_NAME}.loadbalancer.server.port=2368
     logging:
       driver: json-file
       options:
@@ -52,8 +56,6 @@ services:
 
   ghost-mysql:
     image: mysql:8.0
-    container_name: ghost-mysql
-    hostname: ghost-mysql
     restart: unless-stopped
     expose:
       - 3306

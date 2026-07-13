@@ -52,9 +52,14 @@ compose up -d
 
 #### 3. VERIFICATION ####
 echo "[ghost-update] attente du healthcheck Ghost (max ${HEALTH_TIMEOUT}s)..."
+# On resout l'ID du conteneur via compose : son nom depend du COMPOSE_PROJECT_NAME
+# de cette instance, plusieurs Ghost pouvant tourner sur le meme serveur.
+CONTENEUR="$(compose ps -q ghost)"
+[ -n "$CONTENEUR" ] || { echo "[ghost-update] conteneur ghost introuvable" >&2; exit 1; }
+
 ATTENTE=0
 while [ "$ATTENTE" -lt "$HEALTH_TIMEOUT" ]; do
-  ETAT="$(docker inspect --format '{{.State.Health.Status}}' ghost-rtlx 2>/dev/null || echo 'absent')"
+  ETAT="$(docker inspect --format '{{.State.Health.Status}}' "$CONTENEUR" 2>/dev/null || echo 'absent')"
   case "$ETAT" in
     healthy)
       VERSION_APRES="$(compose exec -T ghost sh -c 'cat current/package.json' 2>/dev/null \
