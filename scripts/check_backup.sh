@@ -86,13 +86,13 @@ else
   ko "aucun dump SQL dans l'archive."
 fi
 
-if printf '%s\n' "$CONTENU" | grep -qE '/ghost/(images|themes|settings)(/|$)'; then
+if grep -qE '/ghost/(images|themes|settings)(/|$)' <<< "$CONTENU"; then
   ok "content Ghost present (images / themes / settings)"
 else
   ko "le content de Ghost est absent de l'archive."
 fi
 
-if printf '%s\n' "$CONTENU" | grep -qE '/\.env$'; then
+if grep -qE '/\.env$' <<< "$CONTENU"; then
   ok ".env present (la stack est remontable telle quelle)"
 else
   ko ".env absent : une restauration demanderait de resaisir les secrets."

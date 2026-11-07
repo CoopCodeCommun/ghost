@@ -181,7 +181,7 @@ EOF
     # elle est deterministe, on la reconstruit.
     NOM_DEPOT="$(printf '%s' "$REPONSE" | sed -n 's/.*"repositoryName"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
     [ -n "$NOM_DEPOT" ] || erreur "reponse inattendue de l'API : $REPONSE"
-    HOTE_BWH="$(printf '%s' "$BW_API_URL" | sed -e 's#^https\?://##' -e 's#/.*##')"
+    HOTE_BWH="$(printf '%s' "$BW_API_URL" | sed -e 's#^https\?://##' -e 's#/.*##' -e 's#:.*##')"
     BORG_REPO="ssh://borgwarehouse@$HOTE_BWH:$BW_SSH_PORT/./$NOM_DEPOT"
     dire "depot cree : $NOM_DEPOT"
   else
