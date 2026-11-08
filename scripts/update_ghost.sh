@@ -22,7 +22,9 @@ GHOST_DIR="${GHOST_DIR:-$(dirname "$SCRIPT_DIR")}"
 COMPOSE_FILE="$GHOST_DIR/docker-compose.yml"
 
 # Duree max d'attente du retour au vert de Ghost, en secondes.
-HEALTH_TIMEOUT=180
+# Un saut de plusieurs versions peut enchainer des migrations pendant 10-15 min
+# (762 s pour 6.52 -> 6.75 le 2026-11-08). Surchargeable : HEALTH_TIMEOUT=1800 make update
+HEALTH_TIMEOUT="${HEALTH_TIMEOUT:-900}"
 
 [ -f "$COMPOSE_FILE" ] || { echo "[ghost-update] compose introuvable : $COMPOSE_FILE" >&2; exit 1; }
 
@@ -69,7 +71,11 @@ while [ "$ATTENTE" -lt "$HEALTH_TIMEOUT" ]; do
       exit 0
       ;;
     unhealthy)
-      break
+      # Pas d'abandon ici : pendant les migrations, Ghost ne repond pas et le
+      # healthcheck le declare unhealthy (~6 min) alors qu'il travaille encore.
+      # On n'abandonne que si le conteneur s'arrete ou redemarre en boucle.
+      [ "$(docker inspect --format '{{.State.Running}} {{.RestartCount}}' "$CONTENEUR" 2>/dev/null)" = "true 0" ] \
+        || break
       ;;
   esac
   sleep 5
@@ -79,6 +85,8 @@ done
 echo "[ghost-update] ECHEC : Ghost n'est pas revenu en bonne sante (etat : ${ETAT:-inconnu})." >&2
 echo "[ghost-update] Derniers logs :" >&2
 compose logs --tail 50 ghost >&2 || true
+echo "[ghost-update] Si les logs montrent encore des migrations (INFO Adding/Removing...), Ghost travaille :" >&2
+echo "[ghost-update]   NE PAS redemarrer ni restaurer ; suivre : docker compose logs -f ghost" >&2
 echo "[ghost-update] Sauvegarde disponible dans borgwarehouse." >&2
 echo "[ghost-update] Procedure de restauration : voir la section 'Restauration' du README." >&2
 exit 1
